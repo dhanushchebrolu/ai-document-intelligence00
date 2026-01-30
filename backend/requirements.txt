@@ -1,6 +1,5 @@
-fastapi
-uvicorn
-pytesseract
-pillow
-python-multipart
+fastapi==0.110.0
+uvicorn[standard]==0.27.1
 groq
+pypdf
+python-multipart
