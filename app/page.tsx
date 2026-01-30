@@ -7,14 +7,14 @@ import { ProcessingStatus, type ProcessingStep } from "@/components/processing-s
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { FileText, Sparkles, Shield, Zap, RotateCcw } from "lucide-react"
+import { FileText, RotateCcw } from "lucide-react"
 
 export default function HomePage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingStep, setProcessingStep] = useState<ProcessingStep | null>(null)
   const [extractedData, setExtractedData] = useState<ExtractedData | null>(null)
-  const [rawText, setRawText] = useState<string>("")
+  const [rawText, setRawText] = useState("")
   const [error, setError] = useState<string | null>(null)
 
   const handleFileSelect = useCallback(async (file: File) => {
@@ -26,43 +26,48 @@ export default function HomePage() {
     setProcessingStep("uploading")
 
     try {
-      await new Promise((r) => setTimeout(r, 400))
+      await new Promise(r => setTimeout(r, 300))
       setProcessingStep("extracting")
 
-      await new Promise((r) => setTimeout(r, 400))
+      await new Promise(r => setTimeout(r, 300))
       setProcessingStep("analyzing")
 
       const formData = new FormData()
       formData.append("file", file)
 
-      /* 🔥 CONNECTED TO YOUR FASTAPI BACKEND */
-      const response = await fetch("http://localhost:8001/process-document", {
+      const response = await fetch("http://localhost:8001/analyze", {
         method: "POST",
         body: formData,
       })
 
       const result = await response.json()
+      console.log("API RESULT =", result)
 
       if (!response.ok) {
         throw new Error(result.error || "Processing failed")
       }
 
-      setProcessingStep("complete")
-      await new Promise((r) => setTimeout(r, 400))
+      const d = result.extracted_data || {}
 
-      setExtractedData(result.extracted_data)
-      setRawText(result.raw_text_preview)
-
-      /* 🚫 Show warning if not license */
-      if (
-        result.document_type &&
-        !result.document_type.toLowerCase().includes("driving")
-      ) {
-        setError("Uploaded document is not a Driving License")
+      // ✅ MAP BACKEND → FRONTEND FIELD NAMES
+      const mapped: ExtractedData = {
+        name: d.name || "",
+        dob: d.date_of_birth || "",
+        license_number: d.license_number || "",
+        issue_date: d.issue_date || "",
+        expiry_date: d.expiry_date || "",
+        address: d.address || "",
+        document_type: d.document_type || "",
       }
 
+      setExtractedData(mapped)
+      setRawText(result.raw_text_preview || "")
+
+      setProcessingStep("complete")
+      await new Promise(r => setTimeout(r, 300))
+
     } catch (err: any) {
-      setError(err.message)
+      setError(err.message || "Processing failed")
     } finally {
       setIsProcessing(false)
       setProcessingStep(null)
@@ -95,7 +100,6 @@ export default function HomePage() {
               </p>
             </div>
           </div>
-
           <Badge>MVP v1.0</Badge>
         </div>
       </header>
@@ -103,73 +107,32 @@ export default function HomePage() {
       <div className="container mx-auto px-4 py-8 max-w-4xl">
 
         {/* Hero */}
-        {!extractedData && !isProcessing && (
-          <div className="text-center mb-8">
-            <h2 className="text-3xl font-bold">
-              Extract Information from Driving Licenses
-            </h2>
-            <p className="text-muted-foreground mt-3">
-              OCR + Self-Hosted LLM Processing
-            </p>
-          </div>
-        )}
+        <div className="text-center mb-8">
+          <h2 className="text-3xl font-bold">
+            Extract Information from Driving Licenses
+          </h2>
+          <p className="text-muted-foreground mt-3">
+            OCR + AI Structured Extraction
+          </p>
+        </div>
 
-        {/* Feature Cards */}
-        {!extractedData && !isProcessing && (
-          <div className="grid sm:grid-cols-3 gap-4 mb-8">
-
-            <Card><CardContent className="p-4 flex gap-3">
-              <Sparkles className="text-primary"/>
-              <div>
-                <p className="font-medium">AI-Powered</p>
-                <p className="text-xs text-muted-foreground">
-                  LLM extraction
-                </p>
-              </div>
-            </CardContent></Card>
-
-            <Card><CardContent className="p-4 flex gap-3">
-              <Zap className="text-primary"/>
-              <div>
-                <p className="font-medium">Fast</p>
-                <p className="text-xs text-muted-foreground">
-                  Seconds response
-                </p>
-              </div>
-            </CardContent></Card>
-
-            <Card><CardContent className="p-4 flex gap-3">
-              <Shield className="text-primary"/>
-              <div>
-                <p className="font-medium">Secure</p>
-                <p className="text-xs text-muted-foreground">
-                  No storage
-                </p>
-              </div>
-            </CardContent></Card>
-
-          </div>
-        )}
-
-        {/* Upload Card */}
-        {!extractedData && (
-          <Card className="mb-8">
-            <CardHeader>
-              <CardTitle>Upload Document</CardTitle>
-              <CardDescription>
-                PDF or Image supported
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <DocumentUpload
-                onFileSelect={handleFileSelect}
-                isProcessing={isProcessing}
-                selectedFile={selectedFile}
-                onClear={handleClear}
-              />
-            </CardContent>
-          </Card>
-        )}
+        {/* Upload always visible */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle>Upload Document</CardTitle>
+            <CardDescription>
+              PDF or Image supported
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DocumentUpload
+              onFileSelect={handleFileSelect}
+              isProcessing={isProcessing}
+              selectedFile={selectedFile}
+              onClear={handleClear}
+            />
+          </CardContent>
+        </Card>
 
         {/* Processing */}
         {isProcessing && processingStep && (

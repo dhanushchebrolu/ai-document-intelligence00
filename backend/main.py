@@ -1,54 +1,135 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from groq import Groq
+from PIL import Image
+import pytesseract
+import os
+import io
+import json
 
-from backend.ocr import extract_text_from_image
-from backend.pdf_parser import extract_text_from_pdf
-from backend.llm import extract_with_llm
-from backend.utils import save_upload_file
+app = FastAPI(title="AI Document Intelligence API")
 
-app = FastAPI()
-
-# ✅ CORS (required for frontend)
+# ---------- CORS ----------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# ---------- Groq Client ----------
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+
+# ---------- Health ----------
 @app.get("/")
-def health():
-    return {"status": "backend running"}
+def home():
+    return {"message": "AI Document App Running"}
 
-@app.post("/process-document")
-async def process_document(file: UploadFile = File(...)):
+
+# ---------- Utility: clean LLM JSON ----------
+def clean_llm_json(raw: str) -> str:
+    raw = raw.strip()
+
+    # remove ```json fences
+    if raw.startswith("```"):
+        parts = raw.split("```")
+        if len(parts) >= 2:
+            raw = parts[1]
+
+        if raw.startswith("json"):
+            raw = raw[4:]
+
+    return raw.strip()
+
+
+# ---------- Analyze Endpoint ----------
+@app.post("/analyze")
+async def analyze_document(file: UploadFile = File(...)):
     try:
-        print("🚀 Processing:", file.filename)
+        content = await file.read()
+        filename = file.filename.lower()
 
-        file_path = await save_upload_file(file)
-
-        # 1️⃣ Extract text
-        if file.filename.lower().endswith((".png", ".jpg", ".jpeg")):
-            text = extract_text_from_image(file_path)
-
-        elif file.filename.lower().endswith(".pdf"):
-            text = extract_text_from_pdf(file_path)
-
+        # ---------- OCR ----------
+        if filename.endswith((".jpg", ".jpeg", ".png")):
+            image = Image.open(io.BytesIO(content))
+            text = pytesseract.image_to_string(image)
         else:
-            return {"error": "Unsupported file type"}
+            text = content.decode("utf-8", errors="ignore")
 
-        if not text or len(text.strip()) < 20:
-            return {"error": "No readable text found in document"}
+        if not text.strip():
+            return {"error": "No readable text found"}
 
-        # 2️⃣ LLM extraction
-        extracted = extract_with_llm(text)
+        # ---------- LLM Prompt ----------
+        prompt = f"""
+Extract Driving License information from this OCR text.
 
+Return STRICT JSON only.
+Do NOT include markdown.
+Do NOT include explanation.
+
+Fields:
+name
+date_of_birth
+license_number
+issue_date
+expiry_date
+address
+document_type
+
+OCR TEXT:
+{text}
+"""
+
+        chat = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "system", "content": "You output only valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0
+        )
+
+        raw = chat.choices[0].message.content
+
+        # ---------- Clean + Parse ----------
+        cleaned = clean_llm_json(raw)
+
+        try:
+            structured = json.loads(cleaned)
+        except Exception as e:
+            structured = {
+                "name": "",
+                "date_of_birth": "",
+                "license_number": "",
+                "issue_date": "",
+                "expiry_date": "",
+                "address": "",
+                "document_type": "unknown",
+                "llm_raw_output": cleaned,
+                "parse_error": str(e)
+            }
+
+        # ---------- Ensure keys always exist ----------
+        for key in [
+            "name",
+            "date_of_birth",
+            "license_number",
+            "issue_date",
+            "expiry_date",
+            "address",
+            "document_type"
+        ]:
+            structured.setdefault(key, "")
+
+        # ---------- Final Response ----------
         return {
-            "document_type": extracted.get("document_type", "Driving License"),
-            "extracted_data": extracted,
-            "raw_text_preview": text[:500]
+            "filename": file.filename,
+            "raw_text_preview": text[:500],
+            "extracted_data": structured,
+            "document_type": structured.get("document_type", "unknown")
         }
 
     except Exception as e:
-        print("❌ SERVER ERROR:", str(e))
         return {"error": str(e)}
