@@ -24,7 +24,7 @@ def home():
 
 
 # ---------- PDF Text Extract ----------
-def extract_pdf_text(file_path):
+def extract_pdf_text(file_path: str) -> str:
     reader = PdfReader(file_path)
     text = ""
 
@@ -37,11 +37,9 @@ def extract_pdf_text(file_path):
 # ---------- Analyze ----------
 @app.post("/analyze")
 async def analyze_document(file: UploadFile = File(...)):
-    try:
-<<<<<<< HEAD
-        suffix = os.path.splitext(file.filename)[1]
+    tmp_path = None
 
-=======
+    try:
         # ---------- Check API Key ----------
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
@@ -49,34 +47,23 @@ async def analyze_document(file: UploadFile = File(...)):
 
         client = Groq(api_key=api_key)
 
-        # ---------- Save Upload ----------
-        suffix = os.path.splitext(file.filename)[1]
+        # ---------- Validate File Type ----------
+        suffix = os.path.splitext(file.filename)[1].lower()
+        if suffix != ".pdf":
+            return {"error": "Only digital PDF supported in deployed version"}
 
->>>>>>> 6873d40 (docker backend ready)
+        # ---------- Save Upload ----------
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(await file.read())
             tmp_path = tmp.name
 
-<<<<<<< HEAD
-        # ✅ ONLY DIGITAL PDF SUPPORTED
-=======
-        # ---------- Only Digital PDF ----------
->>>>>>> 6873d40 (docker backend ready)
-        if file.filename.lower().endswith(".pdf"):
-            text = extract_pdf_text(tmp_path)
-        else:
-            return {
-                "error": "OCR disabled in deployed version — upload digital PDF only"
-            }
+        # ---------- Extract Text ----------
+        text = extract_pdf_text(tmp_path)
 
         if not text.strip():
             return {"error": "No readable text found in PDF"}
 
-<<<<<<< HEAD
-        # ---------- LLM Structured Extraction ----------
-=======
         # ---------- Prompt ----------
->>>>>>> 6873d40 (docker backend ready)
         prompt = f"""
 Extract Driving License information from this text.
 
@@ -104,12 +91,15 @@ Text:
             ]
         )
 
+        if not chat.choices:
+            return {"error": "Model returned no output"}
+
         raw = chat.choices[0].message.content.strip()
 
         # ---------- Safe JSON Parse ----------
         try:
             structured = json.loads(raw)
-        except:
+        except Exception:
             structured = {
                 "name": "",
                 "date_of_birth": "",
@@ -130,3 +120,8 @@ Text:
 
     except Exception as e:
         return {"error": str(e)}
+
+    finally:
+        # ---------- Cleanup Temp File ----------
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
