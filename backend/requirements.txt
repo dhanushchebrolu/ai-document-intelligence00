@@ -1,7 +1,7 @@
-pillow
-pytesseract
-pypdf
 fastapi
 uvicorn
 python-multipart
 groq
+pypdf
+pytesseract
+pillow
