@@ -30,7 +30,7 @@ export function DocumentUpload({
         </p>
 
         <p className="text-sm text-muted-foreground mt-1">
-          PDF, JPG, PNG supported
+          Only JPG supported
         </p>
 
         <input

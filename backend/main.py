@@ -67,7 +67,7 @@ async def analyze_document(file: UploadFile = File(...)):
             text = extract_jpg_text(tmp_path)
 
         else:
-            return {"error": "Only PDF and JPG supported"}
+            return {"error": "Only JPG is supported"}
 
         if not text.strip():
             return {"error": "No readable text found"}
