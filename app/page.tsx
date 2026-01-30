@@ -9,6 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { FileText, RotateCcw } from "lucide-react"
 
+const API_URL = "https://ai-document-intelligence00-production.up.railway.app"
+
 export default function HomePage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -26,47 +28,63 @@ export default function HomePage() {
     setProcessingStep("uploading")
 
     try {
-      await new Promise(r => setTimeout(r, 300))
+      await new Promise(r => setTimeout(r, 250))
       setProcessingStep("extracting")
 
-      await new Promise(r => setTimeout(r, 300))
+      await new Promise(r => setTimeout(r, 250))
       setProcessingStep("analyzing")
 
       const formData = new FormData()
       formData.append("file", file)
 
-      const response = await fetch("http://localhost:8001/analyze", {
+      // ✅ timeout protection
+      const controller = new AbortController()
+      const id = setTimeout(() => controller.abort(), 60000)
+
+      const response = await fetch(`${API_URL}/analyze`, {
         method: "POST",
         body: formData,
+        signal: controller.signal,
       })
 
-      const result = await response.json()
+      clearTimeout(id)
+
+      let result: any = {}
+      try {
+        result = await response.json()
+      } catch {
+        throw new Error("Invalid server response")
+      }
+
       console.log("API RESULT =", result)
 
-      if (!response.ok) {
+      if (!response.ok || result.error) {
         throw new Error(result.error || "Processing failed")
       }
 
-      const d = result.extracted_data || {}
+      const d = result.extracted_data ?? {}
 
-      // ✅ MAP BACKEND → FRONTEND FIELD NAMES
+      // ✅ robust mapping
       const mapped: ExtractedData = {
-        name: d.name || "",
-        dob: d.date_of_birth || "",
-        license_number: d.license_number || "",
-        issue_date: d.issue_date || "",
-        expiry_date: d.expiry_date || "",
-        address: d.address || "",
-        document_type: d.document_type || "",
+        name: d.name ?? "-",
+        dob: d.date_of_birth ?? d.dob ?? "-",
+        license_number: d.license_number ?? "-",
+        issue_date: d.issue_date ?? "-",
+        expiry_date: d.expiry_date ?? "-",
+        address: d.address ?? "-",
+        document_type: d.document_type ?? "-",
       }
 
+      console.log("MAPPED DATA =", mapped)
+
       setExtractedData(mapped)
-      setRawText(result.raw_text_preview || "")
+      setRawText(result.raw_text_preview ?? "")
 
       setProcessingStep("complete")
       await new Promise(r => setTimeout(r, 300))
 
     } catch (err: any) {
+      console.error("PROCESS ERROR:", err)
       setError(err.message || "Processing failed")
     } finally {
       setIsProcessing(false)
@@ -116,12 +134,12 @@ export default function HomePage() {
           </p>
         </div>
 
-        {/* Upload always visible */}
+        {/* Upload */}
         <Card className="mb-8">
           <CardHeader>
             <CardTitle>Upload Document</CardTitle>
             <CardDescription>
-              PDF or Image supported
+              JPG supported (OCR enabled)
             </CardDescription>
           </CardHeader>
           <CardContent>
