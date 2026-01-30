@@ -1,7 +1,6 @@
 fastapi
 uvicorn
-python-multipart
 pytesseract
-Pillow
+pillow
+python-multipart
 groq
-google-cloud-vision

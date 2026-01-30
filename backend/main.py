@@ -17,10 +17,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------- Groq Client ----------
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-
-
 # ---------- Health ----------
 @app.get("/")
 def home():
@@ -42,13 +38,30 @@ def extract_pdf_text(file_path):
 @app.post("/analyze")
 async def analyze_document(file: UploadFile = File(...)):
     try:
+<<<<<<< HEAD
         suffix = os.path.splitext(file.filename)[1]
 
+=======
+        # ---------- Check API Key ----------
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            return {"error": "GROQ_API_KEY not set in environment"}
+
+        client = Groq(api_key=api_key)
+
+        # ---------- Save Upload ----------
+        suffix = os.path.splitext(file.filename)[1]
+
+>>>>>>> 6873d40 (docker backend ready)
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(await file.read())
             tmp_path = tmp.name
 
+<<<<<<< HEAD
         # ✅ ONLY DIGITAL PDF SUPPORTED
+=======
+        # ---------- Only Digital PDF ----------
+>>>>>>> 6873d40 (docker backend ready)
         if file.filename.lower().endswith(".pdf"):
             text = extract_pdf_text(tmp_path)
         else:
@@ -59,7 +72,11 @@ async def analyze_document(file: UploadFile = File(...)):
         if not text.strip():
             return {"error": "No readable text found in PDF"}
 
+<<<<<<< HEAD
         # ---------- LLM Structured Extraction ----------
+=======
+        # ---------- Prompt ----------
+>>>>>>> 6873d40 (docker backend ready)
         prompt = f"""
 Extract Driving License information from this text.
 
@@ -78,6 +95,7 @@ Text:
 {text}
 """
 
+        # ---------- Groq Call ----------
         chat = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
