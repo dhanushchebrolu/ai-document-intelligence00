@@ -1,13 +1,12 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from groq import Groq
-from PIL import Image
-import pytesseract
+from pypdf import PdfReader
 import os
-import io
 import json
+import tempfile
 
-app = FastAPI(title="AI Document Intelligence API")
+app = FastAPI(title="AI Document Intelligence API — No OCR Mode")
 
 # ---------- CORS ----------
 app.add_middleware(
@@ -28,48 +27,45 @@ def home():
     return {"message": "AI Document App Running"}
 
 
-# ---------- Utility: clean LLM JSON ----------
-def clean_llm_json(raw: str) -> str:
-    raw = raw.strip()
+# ---------- PDF Text Extract ----------
+def extract_pdf_text(file_path):
+    reader = PdfReader(file_path)
+    text = ""
 
-    # remove ```json fences
-    if raw.startswith("```"):
-        parts = raw.split("```")
-        if len(parts) >= 2:
-            raw = parts[1]
+    for page in reader.pages:
+        text += page.extract_text() or ""
 
-        if raw.startswith("json"):
-            raw = raw[4:]
-
-    return raw.strip()
+    return text
 
 
-# ---------- Analyze Endpoint ----------
+# ---------- Analyze ----------
 @app.post("/analyze")
 async def analyze_document(file: UploadFile = File(...)):
     try:
-        content = await file.read()
-        filename = file.filename.lower()
+        suffix = os.path.splitext(file.filename)[1]
 
-        # ---------- OCR ----------
-        if filename.endswith((".jpg", ".jpeg", ".png")):
-            image = Image.open(io.BytesIO(content))
-            text = pytesseract.image_to_string(image)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(await file.read())
+            tmp_path = tmp.name
+
+        # ✅ ONLY DIGITAL PDF SUPPORTED
+        if file.filename.lower().endswith(".pdf"):
+            text = extract_pdf_text(tmp_path)
         else:
-            text = content.decode("utf-8", errors="ignore")
+            return {
+                "error": "OCR disabled in deployed version — upload digital PDF only"
+            }
 
         if not text.strip():
-            return {"error": "No readable text found"}
+            return {"error": "No readable text found in PDF"}
 
-        # ---------- LLM Prompt ----------
+        # ---------- LLM Structured Extraction ----------
         prompt = f"""
-Extract Driving License information from this OCR text.
+Extract Driving License information from this text.
 
-Return STRICT JSON only.
-Do NOT include markdown.
-Do NOT include explanation.
+Return STRICT JSON only — no explanation.
 
-Fields:
+Fields required:
 name
 date_of_birth
 license_number
@@ -78,27 +74,24 @@ expiry_date
 address
 document_type
 
-OCR TEXT:
+Text:
 {text}
 """
 
         chat = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": "You output only valid JSON."},
+                {"role": "system", "content": "You are a JSON extraction engine."},
                 {"role": "user", "content": prompt}
-            ],
-            temperature=0
+            ]
         )
 
-        raw = chat.choices[0].message.content
+        raw = chat.choices[0].message.content.strip()
 
-        # ---------- Clean + Parse ----------
-        cleaned = clean_llm_json(raw)
-
+        # ---------- Safe JSON Parse ----------
         try:
-            structured = json.loads(cleaned)
-        except Exception as e:
+            structured = json.loads(raw)
+        except:
             structured = {
                 "name": "",
                 "date_of_birth": "",
@@ -107,23 +100,9 @@ OCR TEXT:
                 "expiry_date": "",
                 "address": "",
                 "document_type": "unknown",
-                "llm_raw_output": cleaned,
-                "parse_error": str(e)
+                "llm_raw_output": raw
             }
 
-        # ---------- Ensure keys always exist ----------
-        for key in [
-            "name",
-            "date_of_birth",
-            "license_number",
-            "issue_date",
-            "expiry_date",
-            "address",
-            "document_type"
-        ]:
-            structured.setdefault(key, "")
-
-        # ---------- Final Response ----------
         return {
             "filename": file.filename,
             "raw_text_preview": text[:500],
