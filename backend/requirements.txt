@@ -1,7 +1,7 @@
 pillow
 pytesseract
 pypdf
-groq
 fastapi
 uvicorn
 python-multipart
+groq
